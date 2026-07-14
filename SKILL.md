@@ -1,6 +1,6 @@
 ---
 name: port-lovable-app
-description: Inventory, remediate, and port Lovable-generated GitHub applications to independently operated hosting with an empty managed Supabase backend, using Cloudflare Workers by default or AWS Amplify when explicitly selected. Use for Lovable export, migration, external deployment, pre-production environment recreation, Supabase schema/function transfer, removal of Lovable runtime dependencies, or building a repeatable porting pipeline. Supports Vite React SPAs and TanStack Start fullstack apps. Never use this workflow to copy real user data or tear down the source environment.
+description: Inventory, remediate, and port Lovable-generated GitHub applications to independently operated pre-production hosting with an empty managed Supabase backend. Use for Lovable export or migration, external deployment, portability reviews, Supabase schema and function recreation, removal of Lovable runtime dependencies, or repeatable porting pipelines. Supports Vite React SPAs and TanStack Start across Cloudflare Workers, Vercel, Netlify, AWS Amplify, and portable Docker or OCI targets. Works with Agent Skills clients including Codex and Claude Code. Never use this workflow to copy real user data or tear down the source environment.
 ---
 
 # Port Lovable App
@@ -9,7 +9,7 @@ description: Inventory, remediate, and port Lovable-generated GitHub application
 
 Recreate a Lovable app from a pinned Git commit on independently controlled infrastructure. Preserve code, schema, RLS, functions, and synthetic seed data. Do not copy users, table contents, storage objects, passwords, or secret values.
 
-Default to Cloudflare Workers plus one empty managed Supabase project per app. Use AWS only when the user explicitly selects it or a verified organizational constraint requires it.
+Follow the open Agent Skills format. Read [agent-compatibility.md](references/agent-compatibility.md) when installation, invocation, tool names, or approval behavior depends on the current agent client.
 
 ## Non-negotiable controls
 
@@ -28,7 +28,7 @@ Read [safety-and-evidence.md](references/safety-and-evidence.md) before any exte
 
 ### 1. Establish the source
 
-Prefer the GitHub repository as the deployment source. If only a Lovable project is available, use Lovable read tools to obtain its current commit and file inventory, then locate or request the synced repository.
+Prefer the GitHub repository as the deployment source. If only a Lovable project is available, use an available read-only Lovable connector to obtain its current commit and file inventory, then locate or request the synced repository.
 
 Record the repository, commit SHA, Lovable project id when available, app owner, environment purpose, stated data classification, and target profile. Do not modify the Lovable project while inventorying it.
 
@@ -58,9 +58,17 @@ Do not treat “pre-production” as evidence that all data is synthetic.
 
 ### 4. Select and prepare the target
 
-For `cloudflare-supabase`, read [cloudflare-supabase.md](references/cloudflare-supabase.md). This is the default.
+Choose the profile with the smallest verified remediation surface:
 
-For `aws-amplify-supabase`, read [aws-amplify-supabase.md](references/aws-amplify-supabase.md). Keep Supabase unless the user separately authorizes a replatforming.
+- `cloudflare-supabase`: read [cloudflare-supabase.md](references/cloudflare-supabase.md); prefer for static SPAs or an existing Cloudflare adapter.
+- `vercel-supabase`: read [vercel-supabase.md](references/vercel-supabase.md); prefer for an existing Nitro/Vercel adapter or Vercel preview workflow.
+- `netlify-supabase`: read [netlify-supabase.md](references/netlify-supabase.md); prefer for an existing Netlify adapter or Netlify preview workflow.
+- `aws-amplify-supabase`: read [aws-amplify-supabase.md](references/aws-amplify-supabase.md); use for an explicit AWS placement requirement.
+- `docker-supabase`: read [docker-supabase.md](references/docker-supabase.md); use when a portable OCI artifact is the primary requirement.
+
+If no adapter exists, default to Cloudflare for a static SPA. For TanStack Start, compare the current official Cloudflare, Vercel, and Netlify adapters and choose the one requiring the least code change unless the user states a platform constraint. Keep Supabase unless the user separately authorizes backend replatforming.
+
+The supported profiles and deploy operations live in `scripts/target_profiles.py`. Add future targets there and in a directly linked reference file without weakening the shared safety gate.
 
 Create the target in an isolated pre-production account/organization with a budget and owner. Keep one Supabase project per app. Use data-less preview branches for pull requests when needed.
 
@@ -77,7 +85,7 @@ Review the request, place `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` in 
 
 ### 5. Remove portability blockers
 
-Use `apply_patch` for repository changes. Typical remediations are:
+Use the current agent's smallest safe patch or file-editing mechanism. Typical remediations are:
 
 - replace hardcoded `*.lovable.app` callback hosts with validated environment configuration;
 - replace Lovable AI and email gateways with provider adapters or explicit disabled/test stubs;
@@ -98,7 +106,7 @@ Run with read-only source counts and an existing empty target project ref:
 python scripts/make_port_plan.py <repo>/.porting/inventory.json \
   --out <repo>/.porting/plan.json \
   --app-name <name> \
-  --target cloudflare-supabase \
+  --target <supported-profile> \
   --target-project-ref <empty-project-ref> \
   --source-data-classification test-only \
   --source-auth-users <count> \
@@ -118,7 +126,7 @@ Print the exact operation list without executing it:
 python scripts/apply_port_plan.py <repo>/.porting/plan.json --repo <repo>
 ```
 
-Before `--apply`, confirm the commit is still current and clean, the target is empty and pre-production, secrets are configured without logging values, billing guardrails exist, and the current execution environment has approved network access and external mutations.
+Before `--apply`, confirm the commit is still current and clean, the target is empty and pre-production, secrets are configured without logging values, billing guardrails exist, and the current agent client has granted approval for network access and external mutations.
 
 Apply with the exact confirmation token from the plan and write redacted evidence:
 
@@ -130,7 +138,7 @@ python scripts/apply_port_plan.py <repo>/.porting/plan.json \
   --evidence-out <repo>/.porting/apply-evidence.json
 ```
 
-The runner allowlists package/deployment commands and rejects destructive tokens. It never provisions or deletes the source project.
+The runner allowlists package and target commands and rejects destructive tokens. The Docker profile builds a local image only. No profile provisions or deletes the source project.
 
 ### 8. Verify
 
@@ -157,4 +165,4 @@ Deliver:
 - rollback route to the still-running Lovable source;
 - an explicit statement that source teardown was not performed.
 
-Persist durable architectural findings in the workspace working memory. Record a formal decision only after the user accepts the target architecture.
+When operating inside a durable knowledge workspace, persist material architectural findings according to that workspace's rules. Record a formal decision only after the user accepts the target architecture.

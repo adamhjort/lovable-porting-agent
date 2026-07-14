@@ -2,9 +2,9 @@
 
 [![Tests](https://github.com/adamhjort/lovable-porting-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/adamhjort/lovable-porting-agent/actions/workflows/tests.yml)
 
-Migrate Lovable apps to infrastructure you control. This Codex skill inventories a Lovable-generated GitHub repository, identifies portability blockers, creates a reviewed migration plan, provisions an empty Supabase pre-production backend, and deploys to Cloudflare Workers or AWS Amplify.
+Migrate Lovable apps to infrastructure you control. This model-neutral [Agent Skill](https://agentskills.io) and CLI toolkit inventories a Lovable-generated GitHub repository, identifies portability blockers, creates a reviewed migration plan, provisions an empty Supabase pre-production backend, and prepares deployment for Cloudflare Workers, Vercel, Netlify, AWS Amplify, or a portable Docker/OCI image.
 
-It is designed for AI-first development teams that want a repeatable exit path from Lovable without copying production data or disrupting the source application.
+The same `SKILL.md`, scripts, and references work with Codex, Claude Code, and other clients that implement the open Agent Skills format.
 
 > [!IMPORTANT]
 > This workflow recreates empty pre-production environments with schema, RLS, functions, and synthetic seed data. It does not migrate real users, database rows, storage objects, passwords, or secrets.
@@ -16,46 +16,61 @@ It is designed for AI-first development teams that want a repeatable exit path f
 - Flags hardcoded Lovable hosts, Lovable-managed AI or email gateways, committed secret candidates, and unsafe background work.
 - Produces a machine-readable, approval-gated Lovable migration plan.
 - Creates a new empty managed Supabase project using a dry-run-first workflow.
-- Deploys to Cloudflare Workers by default or AWS Amplify when explicitly selected.
+- Evaluates target-specific adapters and generates missing configuration templates.
 - Generates redacted deployment evidence and body-free HTTP smoke-test results.
 - Preserves the original Lovable environment as the rollback path.
 
-## Target architecture
+## Architecture
 
 ```mermaid
 flowchart LR
     A["Lovable GitHub repository"] --> B["Inventory and safety gate"]
     B --> C["Reviewed port plan"]
-    C --> D["Cloudflare Workers"]
-    C --> E["AWS Amplify"]
-    D --> F["Empty managed Supabase project"]
-    E --> F
-    F --> G["Schema, RLS, Auth, Storage and Edge Functions"]
+    C --> D{"Target profile"}
+    D --> CF["Cloudflare Workers"]
+    D --> VE["Vercel"]
+    D --> NE["Netlify"]
+    D --> AW["AWS Amplify"]
+    D --> DO["Docker / OCI image"]
+    CF --> S["Empty managed Supabase project"]
+    VE --> S
+    NE --> S
+    AW --> S
+    DO --> S
+    S --> G["Schema, RLS, Auth, Storage and Edge Functions"]
 ```
 
-The default profile is Cloudflare Workers plus one managed Supabase project per app. AWS Amplify is supported as a hosting alternative while retaining Supabase. Replacing Supabase with AWS-native services is intentionally treated as a separate replatforming project.
+Hosting and backend are represented separately in the target registry. The initial profiles retain managed Supabase because replacing its Postgres, Auth, Storage, Realtime, Edge Functions, and RLS semantics is a larger replatforming project.
 
-## Install as a Codex skill
+## Agent compatibility
 
-Clone the repository into your Codex skills directory:
+| Client | Personal skill location | Invocation |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/port-lovable-app/` | `$port-lovable-app` |
+| Claude Code | `~/.claude/skills/port-lovable-app/` | `/port-lovable-app` |
+| Other Agent Skills clients | Client-defined skill directory | Client-defined or automatic |
+
+Install for Codex:
 
 ```bash
-git clone https://github.com/adamhjort/lovable-porting-agent.git ~/.codex/skills/port-lovable-app
+git clone https://github.com/adamhjort/lovable-porting-agent.git ~/.agents/skills/port-lovable-app
 ```
 
-On Windows PowerShell:
+Install for Claude Code:
 
-```powershell
-git clone https://github.com/adamhjort/lovable-porting-agent.git "$env:USERPROFILE\.codex\skills\port-lovable-app"
+```bash
+git clone https://github.com/adamhjort/lovable-porting-agent.git ~/.claude/skills/port-lovable-app
 ```
 
-Then ask Codex:
+For a project-scoped installation, clone or copy it to `.agents/skills/port-lovable-app/` for Codex or `.claude/skills/port-lovable-app/` for Claude Code.
+
+Then invoke it explicitly or ask naturally:
 
 ```text
-Use $port-lovable-app to inventory this Lovable repository and produce a safe dry-run migration plan.
+Inventory this Lovable repository and produce a safe dry-run migration plan for the best supported target.
 ```
 
-The skill starts read-only. External changes require a reviewed plan, `can_apply: true`, and an exact confirmation token.
+The OpenAI-specific `agents/openai.yaml` file is optional UI metadata. It does not change the core workflow and is ignored by other Agent Skills clients. See [`references/agent-compatibility.md`](references/agent-compatibility.md) for tool and approval mapping.
 
 ## Run the toolkit directly
 
@@ -72,7 +87,7 @@ Create a dry-run port plan:
 python scripts/make_port_plan.py /path/to/lovable-repo/.porting/inventory.json \
   --out /path/to/lovable-repo/.porting/plan.json \
   --app-name example-app \
-  --target cloudflare-supabase \
+  --target vercel-supabase \
   --target-project-ref empty-project-ref \
   --source-data-classification test-only \
   --source-auth-users 0 \
@@ -92,8 +107,13 @@ Read [`SKILL.md`](SKILL.md) for the complete workflow and approval controls.
 
 | Profile | Frontend and server runtime | Backend | Best fit |
 | --- | --- | --- | --- |
-| `cloudflare-supabase` | Cloudflare Workers and Static Assets | Managed Supabase | Default, low-operations pre-production hosting |
-| `aws-amplify-supabase` | AWS Amplify Hosting | Managed Supabase | Teams with an explicit AWS placement requirement |
+| `cloudflare-supabase` | Cloudflare Workers and Static Assets | Managed Supabase | Static SPAs, existing Cloudflare adapter, low operations |
+| `vercel-supabase` | Vercel Functions and edge assets | Managed Supabase | TanStack Start with Nitro, Git previews |
+| `netlify-supabase` | Netlify Functions and CDN | Managed Supabase | Existing Netlify adapter, deploy previews |
+| `aws-amplify-supabase` | AWS Amplify Hosting | Managed Supabase | Explicit AWS placement requirement |
+| `docker-supabase` | Portable OCI image | Managed Supabase | Provider portability and later Cloud Run, ECS, Azure, Fly.io, Render, Railway, or Kubernetes deployment |
+
+Target metadata, readiness checks, templates, and deployment commands live in [`scripts/target_profiles.py`](scripts/target_profiles.py). Add a new profile there and a directly linked reference file; the shared data gate, secret rules, approval token, and source protection remain unchanged.
 
 ## Safety model
 
@@ -109,6 +129,8 @@ The agent is deliberately conservative:
 - no source deletion, disconnection, pause, or overwrite;
 - separate human approval for any future teardown.
 
+The Docker profile builds a local image only. Registry push and platform deployment require a separate reviewed operation.
+
 See [`references/safety-and-evidence.md`](references/safety-and-evidence.md) for the full evidence and approval model.
 
 ## Supported application patterns
@@ -117,8 +139,7 @@ See [`references/safety-and-evidence.md`](references/safety-and-evidence.md) for
 - Lovable-generated TanStack Start full-stack applications
 - Supabase Postgres migrations and Row Level Security policies
 - Supabase Auth, Storage, Realtime, and Edge Functions
-- Cloudflare Workers Static Assets
-- AWS Amplify Hosting
+- Cloudflare Workers, Vercel, Netlify, AWS Amplify, and Docker/OCI targets
 
 Provider APIs and deployment adapters change over time. The skill requires current official documentation to be checked before external provisioning or deployment.
 
@@ -132,4 +153,4 @@ python scripts/test_porting.py
 
 ## Project status
 
-This is an independent migration toolkit and is not affiliated with Lovable, Supabase, Cloudflare, AWS, or OpenAI. Review every generated plan before applying it to an external environment.
+This is an independent migration toolkit and is not affiliated with Lovable, Supabase, Cloudflare, Vercel, Netlify, AWS, Docker, OpenAI, or Anthropic. Review every generated plan before applying it to an external environment.

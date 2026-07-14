@@ -13,7 +13,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-ALLOWED_EXECUTABLES = {"npm", "npm.cmd", "npx", "npx.cmd", "pnpm", "pnpm.cmd"}
+ALLOWED_EXECUTABLES = {
+    "docker",
+    "docker.exe",
+    "npm",
+    "npm.cmd",
+    "npx",
+    "npx.cmd",
+    "pnpm",
+    "pnpm.cmd",
+}
 FORBIDDEN_TOKENS = {"delete", "destroy", "drop", "reset", "remove", "rm", "teardown"}
 REDACTIONS = (
     (re.compile(r"sbp_[A-Za-z0-9_-]+"), "sbp_<redacted>"),

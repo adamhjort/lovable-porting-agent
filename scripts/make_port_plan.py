@@ -9,6 +9,14 @@ import re
 import sys
 from pathlib import Path
 
+from target_profiles import (
+    DEFAULT_TARGET,
+    deployment_operation,
+    evaluate_target,
+    target_choices,
+    target_metadata,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -17,8 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--app-name", required=True)
     parser.add_argument(
         "--target",
-        choices=("cloudflare-supabase", "aws-amplify-supabase"),
-        default="cloudflare-supabase",
+        choices=target_choices(),
+        default=DEFAULT_TARGET,
     )
     parser.add_argument("--target-project-ref", help="Existing empty Supabase target project ref")
     parser.add_argument("--public-domain", help="Expected public domain after deployment")
@@ -89,44 +97,8 @@ def main() -> int:
             {"code": "empty_supabase_target_required", "severity": "blocking", "message": "Provision an empty target project and pass its ref."}
         )
 
-    generated_files: list[dict] = []
-    if args.target == "cloudflare-supabase":
-        if app["runtime"] == "static-spa":
-            if not inventory["configuration"]["config_files"].get("wrangler.jsonc"):
-                generated_files.append(
-                    {
-                        "path": "wrangler.jsonc",
-                        "purpose": "Cloudflare Workers static assets with SPA fallback",
-                        "content": {
-                            "$schema": "node_modules/wrangler/config-schema.json",
-                            "name": target_name,
-                            "compatibility_date": "SET_TO_CURRENT_DATE",
-                            "assets": {"directory": "./dist", "not_found_handling": "single-page-application"},
-                        },
-                    }
-                )
-                unresolved.append(
-                    {"code": "wrangler_config_required", "severity": "blocking", "message": "Review and commit the generated wrangler.jsonc template."}
-                )
-        elif app["stack"] == "tanstack-start":
-            if not app.get("uses_cloudflare_vite_plugin") or not inventory["configuration"]["config_files"].get("wrangler.jsonc"):
-                unresolved.append(
-                    {
-                        "code": "cloudflare_tanstack_adapter_required",
-                        "severity": "blocking",
-                        "message": "Replace the Lovable-only build wrapper with the current official TanStack Cloudflare setup and commit wrangler.jsonc.",
-                    }
-                )
-        else:
-            unresolved.append({"code": "unsupported_runtime", "severity": "blocking", "message": f"Unsupported runtime: {app['runtime']}"})
-    elif app["runtime"] != "static-spa" and not inventory["configuration"]["config_files"].get("amplify.yml"):
-        unresolved.append(
-            {
-                "code": "amplify_ssr_adapter_required",
-                "severity": "blocking",
-                "message": "Fullstack TanStack requires an Amplify deployment-spec adapter or post-build bundle.",
-            }
-        )
+    generated_files, target_blockers = evaluate_target(args.target, inventory, target_name)
+    unresolved.extend(target_blockers)
 
     operations: list[dict] = []
 
@@ -158,10 +130,7 @@ def main() -> int:
                 True,
             )
 
-    if args.target == "cloudflare-supabase":
-        command("cloudflare-deploy", ["npx", "wrangler", "deploy"], True)
-    else:
-        command("amplify-deploy", ["npx", "amplify", "publish", "--yes"], True)
+    operations.append(deployment_operation(args.target, target_name))
 
     secret_names = [
         item["name"]
@@ -174,6 +143,7 @@ def main() -> int:
         "schema_version": 1,
         "app_name": args.app_name,
         "target": args.target,
+        "target_details": target_metadata(args.target),
         "source": {
             "repository": repo.get("origin") or repo.get("path"),
             "commit": repo.get("commit"),
@@ -186,6 +156,7 @@ def main() -> int:
         "target_config": {
             "supabase_project_ref": args.target_project_ref,
             "public_domain": args.public_domain,
+            "deployment_name": target_name,
             "worker_or_app_name": target_name,
         },
         "required_secret_names": sorted(secret_names),

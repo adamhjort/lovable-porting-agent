@@ -16,8 +16,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 SCHEMA_VERSION = 1
 SKIP_DIRS = {
+    ".amplify",
     ".git",
     ".idea",
+    ".netlify",
     ".next",
     ".output",
     ".turbo",
@@ -329,7 +331,16 @@ def scan_repository(repo: Path) -> dict:
     lockfiles = [name for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb") if (repo / name).exists()]
     config_files = {
         name: (repo / name).exists()
-        for name in ("wrangler.jsonc", "wrangler.toml", "amplify.yml", "supabase/config.toml")
+        for name in (
+            "wrangler.jsonc",
+            "wrangler.toml",
+            "amplify.yml",
+            "vercel.json",
+            "netlify.toml",
+            "Dockerfile",
+            "nginx.conf",
+            "supabase/config.toml",
+        )
     }
 
     commit = run_git(repo, "rev-parse", "HEAD")
@@ -418,7 +429,10 @@ def scan_repository(repo: Path) -> dict:
             "scripts": sorted(scripts),
             "lockfiles": lockfiles,
             "uses_lovable_tanstack_config": "@lovable.dev/vite-tanstack-config" in dependencies,
+            "lovable_tanstack_config_version": dependencies.get("@lovable.dev/vite-tanstack-config"),
             "uses_cloudflare_vite_plugin": "@cloudflare/vite-plugin" in dependencies,
+            "uses_netlify_tanstack_plugin": "@netlify/vite-plugin-tanstack-start" in dependencies,
+            "uses_nitro": "nitro" in dependencies or "nitropack" in dependencies,
             "uses_wrangler": "wrangler" in dependencies,
         },
         "supabase": {
