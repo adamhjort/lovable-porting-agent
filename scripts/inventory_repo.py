@@ -16,8 +16,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 SCHEMA_VERSION = 1
 SKIP_DIRS = {
+    ".amplify",
     ".git",
     ".idea",
+    ".netlify",
     ".next",
     ".output",
     ".turbo",
@@ -307,6 +309,10 @@ def scan_repository(repo: Path) -> dict:
             "pgmq": r"\bpgmq\b",
             "vault": r"\bvault\.|supabase_vault",
             "storage": r"storage\.buckets|\.storage\.from\(",
+            "supabase_auth": r"\bauth\.(?:users|identities|sessions)\b|\.auth\.(?:signIn|signUp|signOut|getSession|getUser|onAuthStateChange)",
+            "supabase_realtime": r"\.channel\(|postgres_changes|\brealtime\.",
+            "supabase_functions": r"\.functions\.invoke\(",
+            "supabase_data_api": r"\.from\(['\"]|\.rpc\(['\"]",
             "fire_and_forget": r"\bvoid\s+(?:Promise\.|[A-Za-z_$][\w$]*\()",
         }
         for feature, pattern in feature_patterns.items():
@@ -329,8 +335,29 @@ def scan_repository(repo: Path) -> dict:
     lockfiles = [name for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb") if (repo / name).exists()]
     config_files = {
         name: (repo / name).exists()
-        for name in ("wrangler.jsonc", "wrangler.toml", "amplify.yml", "supabase/config.toml")
+        for name in (
+            "wrangler.jsonc",
+            "wrangler.toml",
+            "amplify.yml",
+            "vercel.json",
+            "netlify.toml",
+            "Dockerfile",
+            "nginx.conf",
+            "staticwebapp.config.json",
+            "swa-cli.config.json",
+            "railway.json",
+            "railway.toml",
+            "render.yaml",
+            "fly.toml",
+            ".do/app.yaml",
+            "k8s/deployment.yaml",
+            "k8s/service.yaml",
+            "supabase/config.toml",
+        )
     }
+    config_files["github-pages-workflow"] = any(
+        (repo / ".github" / "workflows").glob("*pages*.y*ml")
+    )
 
     commit = run_git(repo, "rev-parse", "HEAD")
     dirty_raw = run_git(repo, "status", "--porcelain")
@@ -418,8 +445,12 @@ def scan_repository(repo: Path) -> dict:
             "scripts": sorted(scripts),
             "lockfiles": lockfiles,
             "uses_lovable_tanstack_config": "@lovable.dev/vite-tanstack-config" in dependencies,
+            "lovable_tanstack_config_version": dependencies.get("@lovable.dev/vite-tanstack-config"),
             "uses_cloudflare_vite_plugin": "@cloudflare/vite-plugin" in dependencies,
+            "uses_netlify_tanstack_plugin": "@netlify/vite-plugin-tanstack-start" in dependencies,
+            "uses_nitro": "nitro" in dependencies or "nitropack" in dependencies,
             "uses_wrangler": "wrangler" in dependencies,
+            "uses_supabase_client": "@supabase/supabase-js" in dependencies,
         },
         "supabase": {
             "configured": config_files["supabase/config.toml"],
