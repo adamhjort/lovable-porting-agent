@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.zip
+.porting/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.DS_Store
+Thumbs.db

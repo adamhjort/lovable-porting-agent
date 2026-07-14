@@ -1,0 +1,4 @@
+interface:
+  display_name: "Port Lovable App"
+  short_description: "Safely migrate Lovable apps to independent hosting"
+  default_prompt: "Use $port-lovable-app to inventory this Lovable repository and produce a safe dry-run port to Cloudflare Workers and managed Supabase."
