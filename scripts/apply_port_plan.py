@@ -16,6 +16,10 @@ from pathlib import Path
 ALLOWED_EXECUTABLES = {
     "docker",
     "docker.exe",
+    "fly",
+    "fly.exe",
+    "flyctl",
+    "flyctl.exe",
     "npm",
     "npm.cmd",
     "npx",
@@ -76,6 +80,8 @@ def main() -> int:
         validate_argv(argv)
         marker = "EXTERNAL" if operation.get("mutates_external_state") else "LOCAL"
         print(f"[{marker}] {operation['step']}: {' '.join(argv)}")
+    for operation in plan.get("manual_operations", []):
+        print(f"[MANUAL] {operation['step']}: {operation['action']}")
 
     if not args.apply:
         print("Dry-run only. Re-run with --apply and the exact confirmation token after review.")
@@ -93,6 +99,14 @@ def main() -> int:
         "source_commit": plan.get("source", {}).get("commit"),
         "started_at": datetime.now(timezone.utc).isoformat(),
         "operations": [],
+        "manual_operations": [
+            {
+                "step": operation.get("step"),
+                "action": operation.get("action"),
+                "status": "pending-external-evidence",
+            }
+            for operation in plan.get("manual_operations", [])
+        ],
     }
     for operation in plan.get("operations", []):
         argv = operation["argv"]
@@ -126,7 +140,7 @@ def main() -> int:
             evidence["status"] = "failed"
             break
     else:
-        evidence["status"] = "completed"
+        evidence["status"] = "manual-steps-pending" if plan.get("manual_operations") else "completed"
     evidence["finished_at"] = datetime.now(timezone.utc).isoformat()
 
     if args.evidence_out:
@@ -134,7 +148,7 @@ def main() -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"Wrote redacted evidence: {out}")
-    return 0 if evidence.get("status") == "completed" else 1
+    return 0 if evidence.get("status") in {"completed", "manual-steps-pending"} else 1
 
 
 if __name__ == "__main__":

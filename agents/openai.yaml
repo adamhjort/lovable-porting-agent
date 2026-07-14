@@ -1,4 +1,4 @@
 interface:
   display_name: "Port Lovable App"
-  short_description: "Port Lovable apps across independent targets"
-  default_prompt: "Use $port-lovable-app to inventory this Lovable repository, select a supported target, and produce a safe dry-run migration plan."
+  short_description: "Port Lovable apps across hosting and backends"
+  default_prompt: "Use $port-lovable-app to inventory this Lovable repository, select hosting, backend, and data mode independently, and produce a safe dry-run migration plan."

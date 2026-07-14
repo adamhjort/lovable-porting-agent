@@ -9,6 +9,8 @@ node_modules/
 dist/
 .amplify/
 .netlify/
+.railway/
+.swa/
 .vercel/
 .wrangler/
 .DS_Store

@@ -1,26 +1,27 @@
 ---
 name: port-lovable-app
-description: Inventory, remediate, and port Lovable-generated GitHub applications to independently operated pre-production hosting with an empty managed Supabase backend. Use for Lovable export or migration, external deployment, portability reviews, Supabase schema and function recreation, removal of Lovable runtime dependencies, or repeatable porting pipelines. Supports Vite React SPAs and TanStack Start across Cloudflare Workers, Vercel, Netlify, AWS Amplify, and portable Docker or OCI targets. Works with Agent Skills clients including Codex and Claude Code. Never use this workflow to copy real user data or tear down the source environment.
+description: Inventory, remediate, and port Lovable-generated applications to independently operated infrastructure. Use for Lovable export or migration, portability assessment, pre-production recreation, optional approval-gated database cloning, removal of Lovable runtime dependencies, or repeatable deployment planning. Select hosting and backend independently across edge, static, serverless, container, Supabase, self-hosted, and common PostgreSQL targets. Works with Agent Skills clients including Codex and Claude Code. Never copy data implicitly, expose secrets, or tear down the source environment.
 ---
 
 # Port Lovable App
 
 ## Outcome
 
-Recreate a Lovable app from a pinned Git commit on independently controlled infrastructure. Preserve code, schema, RLS, functions, and synthetic seed data. Do not copy users, table contents, storage objects, passwords, or secret values.
+Recreate a Lovable application from a pinned Git commit on independently controlled infrastructure. Select hosting and backend separately. Default to an empty or schema-only backend; copy existing database rows only through the separate, explicit clone workflow.
 
-Follow the open Agent Skills format. Read [agent-compatibility.md](references/agent-compatibility.md) when installation, invocation, tool names, or approval behavior depends on the current agent client.
+This is a model-neutral [Agent Skill](https://agentskills.io/specification). Read [agent-compatibility.md](references/agent-compatibility.md) when installation, invocation, tool names, or approval behavior depends on the current client.
 
 ## Non-negotiable controls
 
 - Start read-only and produce a dry-run inventory.
 - Pin a clean Git commit before any external deployment.
 - Output secret names only. Never output, migrate, or commit secret values.
-- Query only aggregate source metadata for the data gate. Never inspect care records, applications, recordings, documents, or other row contents.
-- Require explicit `test-only` classification. Non-zero auth or storage counts require a human evidence reference.
-- Create a new empty backend. Never point a port at an existing production project.
-- Run external mutations only from a reviewed plan with `can_apply: true`.
-- Never delete, disconnect, pause, or overwrite the Lovable source in this workflow. Teardown is a separate user-approved task.
+- Use aggregate metadata for classification; do not inspect row contents, identities, documents, recordings, or file names.
+- Keep the normal deployment plan empty/schema-only. It must never copy database rows.
+- Use [database-cloning.md](references/database-cloning.md) only when the user explicitly requests a copy and supplies the required human evidence.
+- Treat a sanitized clone as fully sensitive until masking validation is signed off.
+- Run external mutations only from a reviewed plan whose blockers are empty and after client-native approval.
+- Never delete, disconnect, pause, overwrite, or tear down the source in this workflow.
 
 Read [safety-and-evidence.md](references/safety-and-evidence.md) before any external mutation.
 
@@ -28,107 +29,110 @@ Read [safety-and-evidence.md](references/safety-and-evidence.md) before any exte
 
 ### 1. Establish the source
 
-Prefer the GitHub repository as the deployment source. If only a Lovable project is available, use an available read-only Lovable connector to obtain its current commit and file inventory, then locate or request the synced repository.
+Prefer the Git repository as the code source. If only a Lovable project is available, use an available read-only connector to obtain its current commit and file inventory, then locate the synced repository.
 
-Record the repository, commit SHA, Lovable project id when available, app owner, environment purpose, stated data classification, and target profile. Do not modify the Lovable project while inventorying it.
+Record repository, commit SHA, Lovable project id when available, owner, environment purpose, stated data classification, requested hosting, requested backend, and whether an existing-data copy was explicitly requested.
 
 ### 2. Run the local inventory
-
-Run:
 
 ```text
 python scripts/inventory_repo.py <repo> --out <repo>/.porting/inventory.json
 ```
 
-The script detects stack, runtime, migrations, Edge Functions, API routes, environment-variable names, Node imports, Lovable runtime hosts, managed Lovable services, migration extensions, fire-and-forget work, and likely committed secrets. It never emits a detected secret value.
+The script detects application runtime, Supabase and Lovable dependencies, backend capability requirements, migrations, Edge Functions, API routes, target configuration, environment-variable names, unsafe background work, outbound database features, and likely committed secrets. It never emits a detected secret value.
 
-Review every blocker. Fix code or configuration and rerun the inventory; do not acknowledge away committed secrets, hardcoded Lovable callback hosts, or a dirty worktree.
+Fix blockers and rerun. Do not acknowledge away a dirty worktree, committed secret candidate, hardcoded Lovable callback, or missing backend adapter.
 
-### 3. Complete the remote data gate
+### 3. Classify data and choose a transfer mode
 
-When a Lovable/Supabase read tool is available, run only the aggregate queries in [safety-and-evidence.md](references/safety-and-evidence.md). Otherwise ask the environment owner for the same counts.
+Use the aggregate queries and evidence rules in [safety-and-evidence.md](references/safety-and-evidence.md).
 
-Classify the source as one of:
+- `test-only`: use the normal empty/schema-only path unless the user explicitly wants the synthetic rows copied.
+- `contains-real-data`: the normal plan must stop; continue only through a separately authorized `full-clone` or `sanitized-clone` plan.
+- `unknown`: stop before any external mutation.
 
-- `test-only`: continue with empty recreation;
-- `contains-real-data`: stop; this skill is not a data-migration workflow;
-- `unknown`: stop before apply.
+Do not infer synthetic content from “development”, “test”, “pre-production”, or a project name.
 
-Do not treat “pre-production” as evidence that all data is synthetic.
+### 4. Select hosting and backend independently
 
-### 4. Select and prepare the target
+Hosting profiles:
 
-Choose the profile with the smallest verified remediation surface:
+- edge/static/serverless: read [hosting-edge-static.md](references/hosting-edge-static.md);
+- containers and orchestrators: read [hosting-containers.md](references/hosting-containers.md).
 
-- `cloudflare-supabase`: read [cloudflare-supabase.md](references/cloudflare-supabase.md); prefer for static SPAs or an existing Cloudflare adapter.
-- `vercel-supabase`: read [vercel-supabase.md](references/vercel-supabase.md); prefer for an existing Nitro/Vercel adapter or Vercel preview workflow.
-- `netlify-supabase`: read [netlify-supabase.md](references/netlify-supabase.md); prefer for an existing Netlify adapter or Netlify preview workflow.
-- `aws-amplify-supabase`: read [aws-amplify-supabase.md](references/aws-amplify-supabase.md); use for an explicit AWS placement requirement.
-- `docker-supabase`: read [docker-supabase.md](references/docker-supabase.md); use when a portable OCI artifact is the primary requirement.
+Backend profiles:
 
-If no adapter exists, default to Cloudflare for a static SPA. For TanStack Start, compare the current official Cloudflare, Vercel, and Netlify adapters and choose the one requiring the least code change unless the user states a platform constraint. Keep Supabase unless the user separately authorizes backend replatforming.
+- all choices and support levels: read [backend-profiles.md](references/backend-profiles.md);
+- managed or self-hosted Supabase: read [backend-supabase.md](references/backend-supabase.md);
+- Neon, AWS, Google Cloud, Azure, or generic PostgreSQL: read [backend-postgres.md](references/backend-postgres.md).
 
-The supported profiles and deploy operations live in `scripts/target_profiles.py`. Add future targets there and in a directly linked reference file without weakening the shared safety gate.
+Use `--backend auto` when no backend constraint is stated. It resolves to `supabase-managed` only when the inventory detects Supabase/backend requirements; otherwise it resolves to `none`.
 
-Create the target in an isolated pre-production account/organization with a budget and owner. Keep one Supabase project per app. Use data-less preview branches for pull requests when needed.
+Do not describe guided profiles as fully automated. A plain PostgreSQL target does not replace Supabase Auth, Storage, Realtime, Edge Functions, or Data API behavior. Implement and test those adapters first.
 
-Provisioning is dry-run by default:
+### 5. Prepare an empty backend when no data copy is requested
+
+For managed Supabase, provisioning remains dry-run by default:
 
 ```text
 python scripts/provision_supabase.py \
   --name <name> \
   --organization-slug <organization> \
-  --out <repo>/.porting/supabase-target.json
+  --out <repo>/.porting/backend-target.json
 ```
 
-Review the request, place `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` in the process environment without printing them, then rerun with `--apply` and the exact confirmation token. The script writes only the new project ref and other non-secret metadata. If the current Supabase API differs from the bundled reference, stop and update the script against current official documentation.
+Review the request, inject `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` through the process environment without printing them, then rerun with `--apply` and the exact confirmation token. For another backend, follow the selected profile's guided provisioning and attach non-secret readiness evidence.
 
-### 5. Remove portability blockers
+### 6. Create a database clone plan only when requested
 
-Use the current agent's smallest safe patch or file-editing mechanism. Typical remediations are:
+Read [database-cloning.md](references/database-cloning.md), then run `scripts/make_database_clone_plan.py`. Choose:
 
-- replace hardcoded `*.lovable.app` callback hosts with validated environment configuration;
-- replace Lovable AI and email gateways with provider adapters or explicit disabled/test stubs;
-- rotate any literal secret found in migrations and move its value to a target secret store;
-- replace `project_id` and callback URLs with target configuration;
-- convert background work to `waitUntil`, a queue, or a durable workflow;
-- make the build use the current official target adapter;
-- retain RLS and service-role separation;
+- `full-clone` for an authorized complete copy from an immutable restore point;
+- `sanitized-clone` for a quarantined copy followed by a reviewed masking and validation specification.
+
+Prefer provider-managed clone/restore when it preserves controls and avoids plaintext dumps. Use logical PostgreSQL restore or a provider migration service when required. Never place connection passwords in plan JSON, command arguments shown to the user, logs, or evidence.
+
+The clone plan starts with `release_allowed: false`. After cloning, disable copied outbound integrations, rotate target credentials, reconfigure services not included in the database copy, validate RLS/Auth/counts, and obtain acceptance evidence before broadening access.
+
+### 7. Remove portability blockers
+
+Use the current agent's smallest safe patch mechanism. Typical work includes:
+
+- replace hardcoded Lovable hosts with validated environment configuration;
+- replace Lovable AI/email gateways with provider adapters or explicit test stubs;
+- rotate literal secrets and move target values to an approved secret store;
+- replace Supabase-specific client behavior when a non-Supabase backend is selected;
+- preserve RLS and tenant isolation or replace them with an equivalent authorization layer;
+- replace fire-and-forget work with platform-native durable execution;
+- configure the current official hosting adapter;
 - add deterministic synthetic seed data without personal information.
 
-Do not rewrite historical migrations destructively after they have been used in production. For these pre-production ports, sanitize the target migration chain on a new branch and preserve an audit note explaining the change.
+Do not rewrite production-used migrations destructively. Preserve an audit note for any sanitized pre-production migration chain.
 
-### 6. Generate the port plan
-
-Run with read-only source counts and an existing empty target project ref:
+### 8. Generate the deployment plan
 
 ```text
 python scripts/make_port_plan.py <repo>/.porting/inventory.json \
   --out <repo>/.porting/plan.json \
   --app-name <name> \
-  --target <supported-profile> \
-  --target-project-ref <empty-project-ref> \
+  --hosting <hosting-profile> \
+  --backend <backend-profile-or-auto> \
+  --backend-target-id <non-secret-target-id> \
   --source-data-classification test-only \
   --source-auth-users <count> \
   --source-storage-objects <count> \
   --classification-evidence <reference>
 ```
 
-On PowerShell, place each argument on one line or use the PowerShell continuation character. Do not put secret values in the command.
+For `none`, omit the backend target id. For guided or existing backends, add `--backend-readiness-evidence`. Review and commit generated target templates, rerun inventory, and regenerate until `can_apply` is true.
 
-If the plan returns generated file templates, review and commit them, rerun inventory, and regenerate the plan. Continue only when `can_apply` is `true`.
-
-### 7. Review then apply
-
-Print the exact operation list without executing it:
+### 9. Review then apply
 
 ```text
 python scripts/apply_port_plan.py <repo>/.porting/plan.json --repo <repo>
 ```
 
-Before `--apply`, confirm the commit is still current and clean, the target is empty and pre-production, secrets are configured without logging values, billing guardrails exist, and the current agent client has granted approval for network access and external mutations.
-
-Apply with the exact confirmation token from the plan and write redacted evidence:
+The dry run prints allowlisted command operations. Guided operations remain explicit manual steps. Before `--apply`, confirm the commit is unchanged and clean, the environment owner and budget exist, secrets are injected without logging, data handling matches the approved mode, and the client granted approval for network and external mutations.
 
 ```text
 python scripts/apply_port_plan.py <repo>/.porting/plan.json \
@@ -138,31 +142,18 @@ python scripts/apply_port_plan.py <repo>/.porting/plan.json \
   --evidence-out <repo>/.porting/apply-evidence.json
 ```
 
-The runner allowlists package and target commands and rejects destructive tokens. The Docker profile builds a local image only. No profile provisions or deletes the source project.
+### 10. Verify and hand off
 
-### 8. Verify
-
-Run the application-specific test suite plus body-free HTTP checks:
+Run application tests and body-free smoke checks:
 
 ```text
 python scripts/smoke_test.py https://<target-host> \
   --check /=200 \
-  --check /api/public/v1/healthz=200 \
   --out <repo>/.porting/smoke-evidence.json
 ```
 
-Use only routes that exist. Add separate tests for login and token refresh, tenant isolation, representative RLS denial, private storage signed URLs, server routes, callback signatures, idempotency, the AI test stub/provider, cron/queue retry behavior, redirects, and OAuth callbacks.
+Add tests for login/token refresh, tenant isolation, RLS or replacement authorization denial, private objects, server routes, callbacks, retries, disabled outbound integrations, redirects, and OAuth callbacks.
 
-### 9. Hand off
+Deliver target URL and owners, source commit, hosting/backend profiles, deployment id, inventory and evidence, unresolved warnings, disabled integrations, clone scope and release decision when applicable, budget/alerts, retention deadline, rollback route to the still-running source, and an explicit statement that source teardown was not performed.
 
-Deliver:
-
-- target URL and environment owner;
-- source commit and target deployment id;
-- inventory, plan, apply evidence, and smoke evidence;
-- unresolved warnings and disabled integrations;
-- monthly budget/alert configuration;
-- rollback route to the still-running Lovable source;
-- an explicit statement that source teardown was not performed.
-
-When operating inside a durable knowledge workspace, persist material architectural findings according to that workspace's rules. Record a formal decision only after the user accepts the target architecture.
+Persist material architectural findings according to the current knowledge workspace rules.

@@ -40,6 +40,10 @@ where schemaname = 'public';
 
 If auth or storage counts are non-zero, record the counts and the attestation reference in the port plan. Never infer synthetic content from a project name or environment label.
 
+The normal deployment plan is always empty/schema-only. When the user explicitly requests an existing-data copy, stop that plan and use [database-cloning.md](database-cloning.md). A clone requires a separate authorization reference and immutable restore point.
+
+Personal data additionally requires security, data-residency, control-equivalence, access-restriction, and retention evidence. Special-category data also requires a documented legal-basis reference. A sanitized target remains regulated and quarantined until the masking validation is signed off.
+
 ## Secret rule
 
 - Inventory names only.
@@ -51,7 +55,9 @@ If auth or storage counts are non-zero, record the counts and the attestation re
 
 ## Mutation rule
 
-The plan may create an empty target, apply schema, configure a target, and deploy code when the user requested a port/deployment. It may not delete or modify the source. Destructive target recovery also requires a new explicit approval.
+The deployment plan may create an empty target, apply schema, configure a target, and deploy code when the user requested a port/deployment. It may not copy rows, delete, or modify the source.
+
+A separate clone plan may copy a pinned database restore point after its blockers are empty and the external copy operation receives explicit approval. It may not copy Storage object binaries implicitly, reuse source secrets, broaden target access before acceptance, or delete the source. Destructive target recovery also requires a new explicit approval.
 
 ## Evidence package
 
@@ -66,6 +72,8 @@ Retain:
 - runtime warnings and intentionally disabled integrations;
 - cost budget and alert owner;
 - rollback URL.
+
+For database clones, also retain the immutable restore point, data classification, authorization, target control evidence, aggregate validation results, disabled outbound integrations, release decision, retention owner, and cleanup deadline. Never retain row contents or an unencrypted dump in the evidence package.
 
 Store evidence under `.porting/` or the workspace output area. Ensure `.porting/` evidence containing environment identifiers follows repository policy before committing it.
 

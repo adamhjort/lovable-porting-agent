@@ -9,6 +9,12 @@ import re
 import sys
 from pathlib import Path
 
+from backend_profiles import (
+    DEFAULT_BACKEND,
+    backend_choices,
+    backend_metadata,
+    evaluate_backend,
+)
 from target_profiles import (
     DEFAULT_TARGET,
     deployment_operation,
@@ -24,11 +30,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Output plan JSON")
     parser.add_argument("--app-name", required=True)
     parser.add_argument(
+        "--hosting",
         "--target",
+        dest="hosting",
         choices=target_choices(),
         default=DEFAULT_TARGET,
     )
-    parser.add_argument("--target-project-ref", help="Existing empty Supabase target project ref")
+    parser.add_argument("--backend", choices=backend_choices(), default=DEFAULT_BACKEND)
+    parser.add_argument(
+        "--backend-target-id",
+        "--target-project-ref",
+        dest="backend_target_id",
+        help="Non-secret target identifier; a Supabase project ref for supabase-managed",
+    )
+    parser.add_argument("--backend-readiness-evidence", help="Required for guided or existing backend profiles")
     parser.add_argument("--public-domain", help="Expected public domain after deployment")
     parser.add_argument(
         "--source-data-classification",
@@ -63,7 +78,6 @@ def main() -> int:
 
     repo = inventory["repository"]
     app = inventory["application"]
-    supabase = inventory["supabase"]
     target_name = slugify(args.app_name)
     unresolved: list[dict] = []
 
@@ -78,7 +92,11 @@ def main() -> int:
         )
     elif args.source_data_classification == "contains-real-data":
         unresolved.append(
-            {"code": "real_data_migration_out_of_scope", "severity": "blocking", "message": "This skill recreates empty pre-production environments only."}
+            {
+                "code": "separate_database_clone_plan_required",
+                "severity": "blocking",
+                "message": "The deployment plan never copies real data; create and approve a separate database clone plan.",
+            }
         )
 
     if args.source_auth_users is None or args.source_storage_objects is None:
@@ -92,13 +110,16 @@ def main() -> int:
 
     if not repo.get("commit"):
         unresolved.append({"code": "git_commit_required", "severity": "blocking", "message": "Pin a Git commit before apply."})
-    if not args.target_project_ref:
-        unresolved.append(
-            {"code": "empty_supabase_target_required", "severity": "blocking", "message": "Provision an empty target project and pass its ref."}
-        )
-
-    generated_files, target_blockers = evaluate_target(args.target, inventory, target_name)
+    generated_files, target_blockers = evaluate_target(args.hosting, inventory, target_name)
     unresolved.extend(target_blockers)
+
+    resolved_backend, backend_operations, backend_manual_steps, backend_blockers = evaluate_backend(
+        args.backend,
+        inventory,
+        args.backend_target_id,
+        args.backend_readiness_evidence,
+    )
+    unresolved.extend(backend_blockers)
 
     operations: list[dict] = []
 
@@ -120,17 +141,13 @@ def main() -> int:
         command("test", ["npm", "test"])
     command("build", ["npm", "run", "build"])
 
-    if args.target_project_ref:
-        command("supabase-link", ["npx", "supabase", "link", "--project-ref", args.target_project_ref], True)
-        command("supabase-db-push", ["npx", "supabase", "db", "push", "--include-all", "--yes"], True)
-        if supabase.get("edge_function_count", 0) > 0:
-            command(
-                "supabase-functions-deploy",
-                ["npx", "supabase", "functions", "deploy", "--project-ref", args.target_project_ref],
-                True,
-            )
-
-    operations.append(deployment_operation(args.target, target_name))
+    operations.extend(backend_operations)
+    manual_operations = list(backend_manual_steps)
+    deploy_operation = deployment_operation(args.hosting, target_name)
+    if deploy_operation["kind"] == "command":
+        operations.append(deploy_operation)
+    else:
+        manual_operations.append(deploy_operation)
 
     secret_names = [
         item["name"]
@@ -142,8 +159,12 @@ def main() -> int:
     plan = {
         "schema_version": 1,
         "app_name": args.app_name,
-        "target": args.target,
-        "target_details": target_metadata(args.target),
+        "target": args.hosting,
+        "hosting": args.hosting,
+        "target_details": target_metadata(args.hosting),
+        "hosting_details": target_metadata(args.hosting),
+        "backend": resolved_backend,
+        "backend_details": backend_metadata(resolved_backend),
         "source": {
             "repository": repo.get("origin") or repo.get("path"),
             "commit": repo.get("commit"),
@@ -154,7 +175,9 @@ def main() -> int:
             "disposition": "recreate-empty-no-data-copy",
         },
         "target_config": {
-            "supabase_project_ref": args.target_project_ref,
+            "backend_target_id": args.backend_target_id,
+            "backend_readiness_evidence": args.backend_readiness_evidence,
+            "supabase_project_ref": args.backend_target_id if resolved_backend == "supabase-managed" else None,
             "public_domain": args.public_domain,
             "deployment_name": target_name,
             "worker_or_app_name": target_name,
@@ -165,6 +188,7 @@ def main() -> int:
         "can_apply": not unresolved,
         "confirmation_token": confirmation,
         "operations": operations,
+        "manual_operations": manual_operations,
         "source_teardown_included": False,
     }
     out = Path(args.out).resolve()
