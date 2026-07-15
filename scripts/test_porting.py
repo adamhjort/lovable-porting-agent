@@ -107,6 +107,28 @@ select cron.schedule('fixture', '* * * * *', $$ select 1 $$);
     assert "0123456789abcdef0123456789abcdef" not in serialized
 
 
+def test_lockfile_package_names_are_not_secret_literals(root: Path) -> None:
+    write(root / "package.json", json.dumps({"name": "fixture", "scripts": {"build": "vite build"}, "dependencies": {"react": "19", "vite": "8"}}))
+    write(root / "package-lock.json", json.dumps({"packages": {"node_modules/js-tokens": {"version": "4.0.0"}}}))
+    inventory = inventory_repo.scan_repository(root)
+    assert inventory["portability"]["secret_candidates"] == []
+
+
+def test_supabase_capabilities_are_detected(root: Path) -> None:
+    write(root / "package.json", json.dumps({"name": "fixture", "scripts": {"build": "vite build"}, "dependencies": {"@supabase/supabase-js": "2", "react": "19", "vite": "8"}}))
+    write(root / "src/api.ts", "supabase.auth.signInWithOAuth({ provider: 'github' }); supabase.from('projects').select('*'); supabase.functions.invoke('ping');")
+    inventory = inventory_repo.scan_repository(root)
+    assert {"supabase_auth", "supabase_data_api", "supabase_functions"} <= set(inventory["portability"]["features"])
+
+
+def test_railway_accepts_nitro_tanstack_without_dockerfile() -> None:
+    inventory = minimal_target_inventory(runtime="fullstack", stack="tanstack-start")
+    inventory["application"].update({"uses_nitro": True, "build_command": "vite build"})
+    generated, blockers = target_profiles.evaluate_target("railway", inventory, "fixture")
+    assert generated == []
+    assert blockers == []
+
+
 def test_clean_dry_run(root: Path) -> None:
     write(
         root / "package.json",
@@ -471,8 +493,13 @@ def main() -> int:
     test_target_registry()
     test_target_evaluation()
     test_backend_registry()
+    test_railway_accepts_nitro_tanstack_without_dockerfile()
     with tempfile.TemporaryDirectory(prefix="port-lovable-blockers-") as tmp:
         test_blocker_detection(Path(tmp))
+    with tempfile.TemporaryDirectory(prefix="port-lovable-lockfile-") as tmp:
+        test_lockfile_package_names_are_not_secret_literals(Path(tmp))
+    with tempfile.TemporaryDirectory(prefix="port-lovable-capabilities-") as tmp:
+        test_supabase_capabilities_are_detected(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="port-lovable-clean-") as tmp:
         test_clean_dry_run(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="port-lovable-targets-") as tmp:

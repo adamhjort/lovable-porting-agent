@@ -301,9 +301,16 @@ def evaluate_target(target: str, inventory: dict, target_name: str) -> tuple[lis
             blockers.append(_blocker("azure_static_config_required", "Review and commit staticwebapp.config.json and the SWA CLI configuration."))
 
     elif target in {"docker", "gcp-cloud-run", "aws-ecs-fargate", "railway", "render", "fly-io", "kubernetes", "digitalocean-app-platform"}:
-        container_generated, container_blockers = _container_readiness(inventory)
-        generated.extend(container_generated)
-        blockers.extend(container_blockers)
+        railway_nitro_ready = (
+            target == "railway"
+            and app.get("stack") == "tanstack-start"
+            and app.get("uses_nitro")
+            and bool(app.get("build_command"))
+        )
+        if not railway_nitro_ready:
+            container_generated, container_blockers = _container_readiness(inventory)
+            generated.extend(container_generated)
+            blockers.extend(container_blockers)
         if target == "render" and not _config_exists(inventory, "render.yaml"):
             generated.append(_generated("render.yaml", "Render Blueprint", f"""services:\n  - type: web\n    name: {target_name}\n    runtime: docker\n    dockerfilePath: ./Dockerfile\n    autoDeployTrigger: off\n"""))
             blockers.append(_blocker("render_blueprint_required", "Review and commit render.yaml."))

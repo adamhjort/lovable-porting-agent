@@ -212,6 +212,10 @@ def scan_repository(repo: Path) -> dict:
         "pgmq": set(),
         "vault": set(),
         "storage": set(),
+        "supabase_auth": set(),
+        "supabase_realtime": set(),
+        "supabase_functions": set(),
+        "supabase_data_api": set(),
         "fire_and_forget": set(),
     }
 
@@ -275,7 +279,11 @@ def scan_repository(repo: Path) -> dict:
                     (rel, number, host, category),
                 )
 
-        for match in SECRET_TUPLE_PATTERN.finditer(raw):
+        scan_literal_tuples = Path(rel).name.lower() not in {
+            "package.json", "package-lock.json", "npm-shrinkwrap.json",
+            "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb",
+        }
+        for match in SECRET_TUPLE_PATTERN.finditer(raw) if scan_literal_tuples else ():
             key, value = match.group(1), match.group(2)
             if PLACEHOLDER_PATTERN.search(value):
                 continue

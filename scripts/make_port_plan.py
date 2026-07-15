@@ -86,27 +86,29 @@ def main() -> int:
             continue
         unresolved.append(blocker)
 
-    if args.source_data_classification == "unknown":
-        unresolved.append(
-            {"code": "source_data_classification_required", "severity": "blocking", "message": "Classify source data before apply."}
-        )
-    elif args.source_data_classification == "contains-real-data":
-        unresolved.append(
-            {
-                "code": "separate_database_clone_plan_required",
-                "severity": "blocking",
-                "message": "The deployment plan never copies real data; create and approve a separate database clone plan.",
-            }
-        )
+    moves_backend = args.backend not in {"none", "existing-backend"}
+    if moves_backend:
+        if args.source_data_classification == "unknown":
+            unresolved.append(
+                {"code": "source_data_classification_required", "severity": "blocking", "message": "Classify source data before apply."}
+            )
+        elif args.source_data_classification == "contains-real-data":
+            unresolved.append(
+                {
+                    "code": "separate_database_clone_plan_required",
+                    "severity": "blocking",
+                    "message": "The deployment plan never copies real data; create and approve a separate database clone plan.",
+                }
+            )
 
-    if args.source_auth_users is None or args.source_storage_objects is None:
-        unresolved.append(
-            {"code": "remote_counts_required", "severity": "blocking", "message": "Provide read-only auth-user and storage-object counts."}
-        )
-    elif (args.source_auth_users > 0 or args.source_storage_objects > 0) and not args.classification_evidence:
-        unresolved.append(
-            {"code": "classification_evidence_required", "severity": "blocking", "message": "Non-zero source counts require an evidence reference."}
-        )
+        if args.source_auth_users is None or args.source_storage_objects is None:
+            unresolved.append(
+                {"code": "remote_counts_required", "severity": "blocking", "message": "Provide read-only auth-user and storage-object counts."}
+            )
+        elif (args.source_auth_users > 0 or args.source_storage_objects > 0) and not args.classification_evidence:
+            unresolved.append(
+                {"code": "classification_evidence_required", "severity": "blocking", "message": "Non-zero source counts require an evidence reference."}
+            )
 
     if not repo.get("commit"):
         unresolved.append({"code": "git_commit_required", "severity": "blocking", "message": "Pin a Git commit before apply."})
@@ -172,7 +174,7 @@ def main() -> int:
             "auth_users": args.source_auth_users,
             "storage_objects": args.source_storage_objects,
             "classification_evidence": args.classification_evidence,
-            "disposition": "recreate-empty-no-data-copy",
+            "disposition": "keep-existing-no-data-copy" if not moves_backend else "recreate-empty-no-data-copy",
         },
         "target_config": {
             "backend_target_id": args.backend_target_id,
