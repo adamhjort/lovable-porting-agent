@@ -204,6 +204,7 @@ def scan_repository(repo: Path) -> dict:
     secret_candidates: list[dict] = []
     secret_seen: set[tuple] = set()
     feature_locations: dict[str, set[str]] = {
+        "base44_sdk": set(),
         "lovable_ai_gateway": set(),
         "lovable_email": set(),
         "deno_mtls": set(),
@@ -309,6 +310,7 @@ def scan_repository(repo: Path) -> dict:
                 )
 
         feature_patterns = {
+            "base44_sdk": r"@base44/sdk|VITE_BASE44_(?:APP_ID|APP_BASE_URL)",
             "lovable_ai_gateway": r"ai\.gateway\.lovable\.dev|LOVABLE_API_KEY",
             "lovable_email": r"@lovable\.dev/email-js|LOVABLE_SEND_URL",
             "deno_mtls": r"Deno\.createHttpClient|createHttpClient\(",
@@ -426,6 +428,14 @@ def scan_repository(repo: Path) -> dict:
                 "files": sorted(feature_locations["lovable_email"]),
             }
         )
+    if feature_locations["base44_sdk"]:
+        warnings.append(
+            {
+                "code": "base44_backend_dependency",
+                "message": "The exported frontend still calls Base44 data, auth or functions through the official SDK; keep that backend temporarily or complete a reviewed adapter plan.",
+                "files": sorted(feature_locations["base44_sdk"]),
+            }
+        )
     if feature_locations["fire_and_forget"]:
         warnings.append(
             {
@@ -459,6 +469,7 @@ def scan_repository(repo: Path) -> dict:
             "uses_nitro": "nitro" in dependencies or "nitropack" in dependencies,
             "uses_wrangler": "wrangler" in dependencies,
             "uses_supabase_client": "@supabase/supabase-js" in dependencies,
+            "uses_base44_sdk": "@base44/sdk" in dependencies,
         },
         "supabase": {
             "configured": config_files["supabase/config.toml"],

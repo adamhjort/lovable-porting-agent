@@ -121,6 +121,19 @@ def test_supabase_capabilities_are_detected(root: Path) -> None:
     assert {"supabase_auth", "supabase_data_api", "supabase_functions"} <= set(inventory["portability"]["features"])
 
 
+def test_base44_backend_is_detected_and_safely_gated(root: Path) -> None:
+    write(root / "package.json", json.dumps({"name": "base44-fixture", "scripts": {"build": "vite build"}, "dependencies": {"@base44/sdk": "1", "react": "19", "vite": "8"}}))
+    write(root / "src/api.ts", "import { createClient } from '@base44/sdk'; const id = import.meta.env.VITE_BASE44_APP_ID;")
+    inventory = inventory_repo.scan_repository(root)
+    assert inventory["application"]["uses_base44_sdk"] is True
+    assert "base44_sdk" in inventory["portability"]["features"]
+    assert backend_profiles.resolve_backend("auto", inventory) == "existing-backend"
+    backend, _, manual, blockers = backend_profiles.evaluate_backend("existing-backend", inventory, None, "PINNED-BASE44-1")
+    assert backend == "existing-backend" and manual and not blockers
+    _, _, _, blockers = backend_profiles.evaluate_backend("supabase-managed", inventory, "target-project-ref", None)
+    assert "base44_adapter_required" in {item["code"] for item in blockers}
+
+
 def test_railway_accepts_nitro_tanstack_without_dockerfile() -> None:
     inventory = minimal_target_inventory(runtime="fullstack", stack="tanstack-start")
     inventory["application"].update({"uses_nitro": True, "build_command": "vite build"})
@@ -500,6 +513,8 @@ def main() -> int:
         test_lockfile_package_names_are_not_secret_literals(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="port-lovable-capabilities-") as tmp:
         test_supabase_capabilities_are_detected(Path(tmp))
+    with tempfile.TemporaryDirectory(prefix="port-base44-capabilities-") as tmp:
+        test_base44_backend_is_detected_and_safely_gated(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="port-lovable-clean-") as tmp:
         test_clean_dry_run(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="port-lovable-targets-") as tmp:

@@ -97,6 +97,8 @@ def detect_backend_requirements(inventory: dict) -> set[str]:
     features = inventory.get("portability", {}).get("features", {})
     app = inventory.get("application", {})
     requirements: set[str] = set()
+    if app.get("uses_base44_sdk") or features.get("base44_sdk"):
+        requirements.update({"data-api", "auth", "edge-functions"})
     if supabase.get("configured") or supabase.get("migration_count", 0) > 0 or app.get("uses_supabase_client"):
         requirements.update({"postgres", "rls"})
     if app.get("uses_supabase_client") or features.get("supabase_data_api"):
@@ -115,6 +117,10 @@ def detect_backend_requirements(inventory: dict) -> set[str]:
 def resolve_backend(requested: str, inventory: dict) -> str:
     if requested != DEFAULT_BACKEND:
         return requested
+    app = inventory.get("application", {})
+    features = inventory.get("portability", {}).get("features", {})
+    if app.get("uses_base44_sdk") or features.get("base44_sdk"):
+        return "existing-backend"
     return "supabase-managed" if detect_backend_requirements(inventory) else "none"
 
 
@@ -155,10 +161,27 @@ def evaluate_backend(
                     "Document the existing API contract, owner, environment, and acceptance evidence.",
                 )
             )
+        if inventory.get("application", {}).get("uses_base44_sdk") or inventory.get("portability", {}).get("features", {}).get("base44_sdk"):
+            manual_steps.append(
+                {
+                    "step": "verify-base44-contract",
+                    "kind": "reviewed-manual-operation",
+                    "action": "Verify the Base44 app id, backend URL, allowed origins, authentication callbacks, entities and functions against the pinned repository without copying identities or rows.",
+                    "requires_approval": False,
+                }
+            )
         return backend, operations, manual_steps, blockers
 
     if not target_id:
         blockers.append(_blocker("backend_target_required", "Provide a non-secret backend target identifier."))
+
+    if inventory.get("application", {}).get("uses_base44_sdk") or inventory.get("portability", {}).get("features", {}).get("base44_sdk"):
+        blockers.append(
+            _blocker(
+                "base44_adapter_required",
+                "Replace the Base44 SDK data, auth and function calls with a reviewed target-backend adapter before switching away from the existing Base44 backend.",
+            )
+        )
 
     missing = requirements - profile["capabilities"]
     for capability in sorted(missing):
