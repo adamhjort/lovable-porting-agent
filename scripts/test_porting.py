@@ -415,7 +415,12 @@ def test_backend_registry() -> None:
     backend, operations, manual, blockers = backend_profiles.evaluate_backend(
         "neon-postgres", inventory, "neon-target", "READY-1"
     )
-    assert backend == "neon-postgres" and not operations and manual and not blockers
+    assert backend == "neon-postgres" and operations and not manual and not blockers
+
+    backend, operations, manual, blockers = backend_profiles.evaluate_backend(
+        "digitalocean-postgres", inventory, "digitalocean-postgres:db.example/app", "Verified encrypted target connection"
+    )
+    assert backend == "digitalocean-postgres" and operations and not manual and not blockers
 
     inventory["portability"]["features"]["supabase_auth"] = ["src/auth.ts"]
     _, _, _, blockers = backend_profiles.evaluate_backend(

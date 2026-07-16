@@ -37,6 +37,13 @@ BACKEND_PROFILES: dict[str, dict] = {
         "capabilities": {"postgres", "data-api", "auth", "storage", "realtime", "edge-functions", "rls"},
         "reference": "references/backend-supabase.md",
     },
+    "digitalocean-postgres": {
+        "label": "DigitalOcean Managed PostgreSQL",
+        "kind": "managed-postgres",
+        "support_level": "direct",
+        "capabilities": {"postgres", "rls"},
+        "reference": "references/backend-postgres.md",
+    },
     "neon-postgres": {
         "label": "Neon Postgres",
         "kind": "managed-postgres",
@@ -221,6 +228,16 @@ def evaluate_backend(
                     "requires_approval": True,
                 }
             )
+    elif profile["kind"] in {"managed-postgres", "postgres"} and target_id and readiness_evidence:
+        operations.append(
+            {
+                "step": "backend-migrate",
+                "kind": "backend-migration",
+                "target_id": target_id,
+                "mutates_external_state": True,
+                "requires_approval": True,
+            }
+        )
     else:
         if not readiness_evidence:
             blockers.append(
