@@ -70,6 +70,13 @@ def slugify(value: str) -> str:
     return value[:63] or "lovable-app"
 
 
+def env_name(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").upper()
+    if not normalized or normalized[0].isdigit():
+        normalized = f"STACKFERRY_{normalized or 'PRIVATE_VALUE'}"
+    return normalized[:128]
+
+
 def main() -> int:
     args = parse_args()
     inventory_path = Path(args.inventory).resolve()
@@ -86,9 +93,20 @@ def main() -> int:
     app = inventory["application"]
     target_name = slugify(args.app_name)
     unresolved: list[dict] = []
+    deployment_remediations: list[dict] = []
 
     for blocker in inventory["portability"]["blockers"]:
         if blocker["code"] == "source_data_state_unknown":
+            continue
+        remediation = blocker.get("deployment_remediation")
+        if remediation:
+            deployment_remediations.append(
+                {
+                    "type": remediation,
+                    "source_code": blocker["code"],
+                    "locations": blocker.get("locations", []),
+                }
+            )
             continue
         unresolved.append(blocker)
 
@@ -163,6 +181,12 @@ def main() -> int:
         for item in inventory["configuration"]["env_keys"]
         if item["classification"] == "secret"
     ]
+    secret_names.extend(
+        env_name(location.get("key", "STACKFERRY_PRIVATE_VALUE"))
+        for remediation in deployment_remediations
+        if remediation["type"] == "externalize-private-literal"
+        for location in remediation["locations"]
+    )
     commit = repo.get("commit") or "uncommitted"
     confirmation = f"APPLY:{target_name}:{commit[:12]}"
     plan = {
@@ -200,8 +224,9 @@ def main() -> int:
             "deployment_name": target_name,
             "worker_or_app_name": target_name,
         },
-        "required_secret_names": sorted(secret_names),
+        "required_secret_names": sorted(set(secret_names)),
         "generated_files": generated_files,
+        "deployment_remediations": deployment_remediations,
         "unresolved_blockers": unresolved,
         "can_apply": not unresolved,
         "confirmation_token": confirmation,

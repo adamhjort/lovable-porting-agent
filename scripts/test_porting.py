@@ -106,6 +106,16 @@ select cron.schedule('fixture', '* * * * *', $$ select 1 $$);
     }
     serialized = json.dumps(inventory)
     assert "0123456789abcdef0123456789abcdef" not in serialized
+    inventory["repository"]["commit"] = "a" * 40
+    plan = run_plan(root, inventory, "railway", backend="none")
+    unresolved_codes = {item["code"] for item in plan["unresolved_blockers"]}
+    assert "committed_secret_candidate" not in unresolved_codes
+    assert "hardcoded_lovable_runtime_host" not in unresolved_codes
+    assert {item["type"] for item in plan["deployment_remediations"]} == {
+        "externalize-private-literal",
+        "replace-lovable-runtime-host",
+    }
+    assert "CRON_SECRET" in plan["required_secret_names"]
 
 
 def test_lockfile_package_names_are_not_secret_literals(root: Path) -> None:

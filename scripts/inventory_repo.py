@@ -419,8 +419,9 @@ def scan_repository(repo: Path) -> dict:
             {
                 "code": "committed_secret_candidate",
                 "severity": "critical",
-                "message": "Potential committed secret literals must be removed and rotated.",
+                "message": "Potential private literals require deployment-time externalization and provider rotation when confirmed.",
                 "locations": secret_candidates,
+                "deployment_remediation": "externalize-private-literal",
             }
         )
     runtime_hosts = [item for item in hardcoded_hosts if item["category"] == "lovable_runtime_host"]
@@ -429,8 +430,9 @@ def scan_repository(repo: Path) -> dict:
             {
                 "code": "hardcoded_lovable_runtime_host",
                 "severity": "blocking",
-                "message": "Runtime callbacks or links still point at a Lovable-hosted app.",
+                "message": "Runtime callbacks or links require deployment-time target-host substitution.",
                 "locations": runtime_hosts,
+                "deployment_remediation": "replace-lovable-runtime-host",
             }
         )
     if dirty_lines:
