@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import subprocess
 import sys
 import tempfile
@@ -110,6 +111,24 @@ select cron.schedule('fixture', '* * * * *', $$ select 1 $$);
 def test_lockfile_package_names_are_not_secret_literals(root: Path) -> None:
     write(root / "package.json", json.dumps({"name": "fixture", "scripts": {"build": "vite build"}, "dependencies": {"react": "19", "vite": "8"}}))
     write(root / "package-lock.json", json.dumps({"packages": {"node_modules/js-tokens": {"version": "4.0.0"}}}))
+    inventory = inventory_repo.scan_repository(root)
+    assert inventory["portability"]["secret_candidates"] == []
+
+
+def test_public_client_configuration_is_not_a_committed_secret(root: Path) -> None:
+    write(root / "package.json", json.dumps({"name": "fixture", "scripts": {"build": "vite build"}, "dependencies": {"react": "19", "vite": "8"}}))
+    anon_payload = base64.urlsafe_b64encode(json.dumps({"role": "anon"}).encode()).decode().rstrip("=")
+    anon_key = f"eyJheaderpaddinglongenough.{anon_payload}.signature-value-long-enough"
+    write(root / ".env", f"VITE_SUPABASE_PUBLISHABLE_KEY={anon_key}\nVITE_PUBLIC_API_KEY=client-visible-value-123456\n")
+    write(root / "src/config.ts", f"const pair = ['SUPABASE_ANON_KEY', '{anon_key}'];\n")
+    inventory = inventory_repo.scan_repository(root)
+    assert inventory["portability"]["secret_candidates"] == []
+    assert "committed_secret_candidate" not in {item["code"] for item in inventory["portability"]["blockers"]}
+
+
+def test_example_env_values_do_not_create_critical_findings(root: Path) -> None:
+    write(root / "package.json", json.dumps({"name": "fixture", "scripts": {"build": "vite build"}, "dependencies": {"react": "19", "vite": "8"}}))
+    write(root / ".env.example", "POSTMARK_SERVER_TOKEN=replace-this-in-production\n")
     inventory = inventory_repo.scan_repository(root)
     assert inventory["portability"]["secret_candidates"] == []
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -84,6 +85,7 @@ PLACEHOLDER_PATTERN = re.compile(
     r"(?:placeholder|change[-_ ]?me|example|your[-_ ]|<[^>]+>|\$\{|process\.env|Deno\.env)",
     re.IGNORECASE,
 )
+PUBLIC_ENV_FILE_NAMES = {".env.example", ".env.sample", ".env.template", ".env.defaults"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -174,6 +176,28 @@ def classify_env_key(key: str) -> str:
     return "server_config"
 
 
+def jwt_role(value: str) -> str | None:
+    """Inspect only the non-secret JWT role claim."""
+    parts = value.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    role = payload.get("role")
+    return role if isinstance(role, str) else None
+
+
+def is_public_client_configuration(key: str, value: str) -> bool:
+    if classify_env_key(key) == "public_build_config":
+        return True
+    if key.upper() in {"SUPABASE_ANON_KEY", "SUPABASE_PUBLISHABLE_KEY"}:
+        return True
+    return jwt_role(value) == "anon"
+
+
 def line_number(raw: str, offset: int) -> int:
     return raw.count("\n", 0, offset) + 1
 
@@ -234,7 +258,8 @@ def scan_repository(repo: Path) -> dict:
         for pattern in ENV_PATTERNS:
             env_keys.update(pattern.findall(raw))
 
-        if Path(rel).name.lower().startswith(".env"):
+        env_filename = Path(rel).name.lower()
+        if env_filename.startswith(".env"):
             for number, line in enumerate(raw.splitlines(), start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -244,7 +269,13 @@ def scan_repository(repo: Path) -> dict:
                 value = value.strip().strip("'\"")
                 if re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
                     env_keys.add(key)
-                if SECRET_KEY_PATTERN.search(key) and value and not PLACEHOLDER_PATTERN.search(value):
+                if (
+                    env_filename not in PUBLIC_ENV_FILE_NAMES
+                    and classify_env_key(key) == "secret"
+                    and value
+                    and not PLACEHOLDER_PATTERN.search(value)
+                    and not is_public_client_configuration(key, value)
+                ):
                     add_unique(
                         secret_candidates,
                         secret_seen,
@@ -267,7 +298,7 @@ def scan_repository(repo: Path) -> dict:
             if not host:
                 continue
             category = None
-            if host.endswith("lovable.app") or host.endswith("lovableproject.com"):
+            if host.endswith(".lovable.app") or host.endswith(".lovableproject.com"):
                 category = "lovable_runtime_host"
             elif host.endswith("lovable.dev"):
                 category = "lovable_managed_service"
@@ -286,7 +317,7 @@ def scan_repository(repo: Path) -> dict:
         }
         for match in SECRET_TUPLE_PATTERN.finditer(raw) if scan_literal_tuples else ():
             key, value = match.group(1), match.group(2)
-            if PLACEHOLDER_PATTERN.search(value):
+            if PLACEHOLDER_PATTERN.search(value) or is_public_client_configuration(key, value):
                 continue
             number = line_number(raw, match.start())
             add_unique(
@@ -301,6 +332,8 @@ def scan_repository(repo: Path) -> dict:
             ("jwt_literal", JWT_PATTERN),
         ):
             for match in pattern.finditer(raw):
+                if kind == "jwt_literal" and jwt_role(match.group(0)) == "anon":
+                    continue
                 number = line_number(raw, match.start())
                 add_unique(
                     secret_candidates,
