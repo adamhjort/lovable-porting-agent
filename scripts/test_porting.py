@@ -307,7 +307,7 @@ def test_target_evaluation() -> None:
 
     generated, blockers = target_profiles.evaluate_target("docker", inventory, "fixture")
     assert {item["path"] for item in generated} == {"Dockerfile", "nginx.conf"}
-    assert {item["code"] for item in blockers} == {"dockerfile_required", "container_spa_config_required"}
+    assert blockers == []
 
     fullstack = minimal_target_inventory(runtime="fullstack", stack="tanstack-start")
     fullstack["application"]["uses_nitro"] = True
@@ -326,6 +326,11 @@ def test_target_evaluation() -> None:
     fullstack["configuration"]["config_files"]["Dockerfile"] = True
     assert target_profiles.evaluate_target("docker", fullstack, "fixture") == ([], [])
 
+    fullstack["configuration"]["config_files"]["Dockerfile"] = False
+    generated, blockers = target_profiles.evaluate_target("docker", fullstack, "fixture")
+    assert {item["path"] for item in generated} == {"Dockerfile"}
+    assert blockers == []
+
     generated, blockers = target_profiles.evaluate_target("github-pages", inventory, "fixture")
     assert {item["path"] for item in generated} == {".github/workflows/deploy-pages.yml"}
     assert {item["code"] for item in blockers} == {"github_pages_workflow_required"}
@@ -339,7 +344,7 @@ def test_target_evaluation() -> None:
     container_ready["configuration"]["config_files"]["nginx.conf"] = True
     generated, blockers = target_profiles.evaluate_target("render", container_ready, "fixture")
     assert {item["path"] for item in generated} == {"render.yaml"}
-    assert {item["code"] for item in blockers} == {"render_blueprint_required"}
+    assert blockers == []
 
     assert target_profiles.deployment_operation("gcp-cloud-run", "fixture")["kind"] == "reviewed-manual-operation"
 

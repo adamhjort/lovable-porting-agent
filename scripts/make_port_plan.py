@@ -38,6 +38,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--backend", choices=backend_choices(), default=DEFAULT_BACKEND)
     parser.add_argument(
+        "--database-migration-mode",
+        choices=("empty", "schema-only", "clone-test-data"),
+        default="empty",
+        help="Standard ports default to an empty target; source-data evidence is only required for a test-data clone.",
+    )
+    parser.add_argument(
         "--backend-target-id",
         "--target-project-ref",
         dest="backend_target_id",
@@ -87,7 +93,8 @@ def main() -> int:
         unresolved.append(blocker)
 
     moves_backend = args.backend not in {"none", "existing-backend"}
-    if moves_backend:
+    clones_source_data = moves_backend and args.database_migration_mode == "clone-test-data"
+    if clones_source_data:
         if args.source_data_classification == "unknown":
             unresolved.append(
                 {"code": "source_data_classification_required", "severity": "blocking", "message": "Classify source data before apply."}
@@ -174,7 +181,16 @@ def main() -> int:
             "auth_users": args.source_auth_users,
             "storage_objects": args.source_storage_objects,
             "classification_evidence": args.classification_evidence,
-            "disposition": "keep-existing-no-data-copy" if not moves_backend else "recreate-empty-no-data-copy",
+            "database_migration_mode": args.database_migration_mode,
+            "disposition": (
+                "keep-existing-no-data-copy"
+                if not moves_backend
+                else "guarded-test-data-clone"
+                if clones_source_data
+                else "reviewed-schema-only-no-production-data-copy"
+                if args.database_migration_mode == "schema-only"
+                else "recreate-empty-no-data-copy"
+            ),
         },
         "target_config": {
             "backend_target_id": args.backend_target_id,

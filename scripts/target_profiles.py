@@ -203,7 +203,6 @@ def _container_readiness(inventory: dict) -> tuple[list[dict], list[dict]]:
                     """FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\n\nFROM nginx:alpine\nCOPY --from=build /app/dist /usr/share/nginx/html\nCOPY nginx.conf /etc/nginx/conf.d/default.conf\nEXPOSE 8080\n""",
                 )
             )
-            blockers.append(_blocker("dockerfile_required", "Review, harden, pin, and commit the generated Dockerfile template."))
         if not _config_exists(inventory, "nginx.conf"):
             generated.append(
                 _generated(
@@ -212,13 +211,30 @@ def _container_readiness(inventory: dict) -> tuple[list[dict], list[dict]]:
                     """server {\n  listen 8080;\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n\n  location / {\n    try_files $uri $uri/ /index.html;\n  }\n}\n""",
                 )
             )
-            blockers.append(_blocker("container_spa_config_required", "Review and commit the generated nginx.conf template."))
     elif app["stack"] == "tanstack-start":
         if not _config_exists(inventory, "Dockerfile"):
-            blockers.append(
-                _blocker(
-                    "docker_fullstack_adapter_required",
-                    "Add a reviewed multi-stage Dockerfile for the app's current TanStack server output and runtime port.",
+            generated.append(
+                _generated(
+                    "Dockerfile",
+                    "Portable multi-stage image for the reviewed TanStack Start Node output",
+                    """FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+ENV NITRO_PRESET=node-server
+RUN npm run build
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3000
+COPY --from=build /app/.output ./.output
+USER node
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]
+""",
                 )
             )
     else:
@@ -313,7 +329,6 @@ def evaluate_target(target: str, inventory: dict, target_name: str) -> tuple[lis
             blockers.extend(container_blockers)
         if target == "render" and not _config_exists(inventory, "render.yaml"):
             generated.append(_generated("render.yaml", "Render Blueprint", f"""services:\n  - type: web\n    name: {target_name}\n    runtime: docker\n    dockerfilePath: ./Dockerfile\n    autoDeployTrigger: off\n"""))
-            blockers.append(_blocker("render_blueprint_required", "Review and commit render.yaml."))
         elif target == "fly-io" and not _config_exists(inventory, "fly.toml"):
             blockers.append(_blocker("fly_config_required", "Run fly launch --no-deploy, review fly.toml, and commit it before deployment."))
         elif target == "kubernetes" and not (_config_exists(inventory, "k8s/deployment.yaml") and _config_exists(inventory, "k8s/service.yaml")):
